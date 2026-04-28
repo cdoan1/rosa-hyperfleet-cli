@@ -1,6 +1,6 @@
 module github.com/openshift-online/rosa-regional-platform-cli
 
-go 1.24.0
+go 1.25.8
 
 require (
 	github.com/aws/aws-lambda-go v1.54.0
