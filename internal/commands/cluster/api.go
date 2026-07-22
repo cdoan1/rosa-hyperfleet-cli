@@ -56,19 +56,21 @@ func fetchAPIURL(ctx context.Context, baseURL, clusterID string, creds awssdk.Cr
 	}
 
 	var envelope struct {
-		ControllerStatuses []struct {
-			Data map[string]interface{} `json:"data"`
-		} `json:"controller_statuses"`
+		Status *struct {
+			ControlPlaneEndpoint *struct {
+				Host string `json:"host"`
+				Port int32  `json:"port"`
+			} `json:"controlPlaneEndpoint"`
+		} `json:"status"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return "", fmt.Errorf("failed to parse cluster statuses: %w", err)
 	}
 
-	for _, cs := range envelope.ControllerStatuses {
-		if hc, ok := cs.Data["hostedCluster"].(map[string]interface{}); ok {
-			if ep, ok := hc["apiEndpoint"].(string); ok && ep != "" {
-				return ep, nil
-			}
+	if envelope.Status != nil && envelope.Status.ControlPlaneEndpoint != nil {
+		ep := envelope.Status.ControlPlaneEndpoint
+		if ep.Host != "" {
+			return fmt.Sprintf("https://%s:%d", ep.Host, ep.Port), nil
 		}
 	}
 	return "", nil
