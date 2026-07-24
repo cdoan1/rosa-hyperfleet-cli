@@ -22,6 +22,7 @@ type CreateVPCRequest struct {
 	PrivateSubnetCidrs []string
 	AvailabilityZones  []string
 	SingleNatGateway   bool
+	NoWait             bool
 	AWSConfig          aws.Config
 }
 
@@ -32,6 +33,7 @@ type CreateVPCResponse struct {
 
 type DeleteVPCRequest struct {
 	ClusterName string
+	NoWait      bool
 	AWSConfig   aws.Config
 }
 
@@ -108,6 +110,7 @@ func CreateVPC(ctx context.Context, req *CreateVPCRequest) (*CreateVPCResponse, 
 			},
 		},
 		WaitTimeout: 15 * time.Minute,
+		NoWait:      req.NoWait,
 	}
 
 	// Create stack
@@ -169,6 +172,7 @@ func updateVPC(ctx context.Context, cfnClient *cloudformation.Client, req *Creat
 		TemplateBody: templateBody,
 		Parameters:   params,
 		WaitTimeout:  15 * time.Minute,
+		NoWait:       req.NoWait,
 	}
 
 	output, err := cfnClient.UpdateStack(ctx, updateParams)
@@ -227,7 +231,7 @@ func DeleteVPC(ctx context.Context, req *DeleteVPCRequest) error {
 	}
 
 	log.Printf("deleting CloudFormation stack %s", stackName)
-	err = cfnClient.DeleteStack(ctx, stackName, 15*time.Minute)
+	err = cfnClient.DeleteStack(ctx, stackName, 15*time.Minute, req.NoWait)
 	if err != nil {
 		var notFound *cloudformation.StackNotFoundError
 		if errors.As(err, &notFound) {
