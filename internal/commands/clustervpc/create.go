@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/services/clustervpc"
 	"github.com/spf13/cobra"
 )
@@ -54,20 +54,21 @@ Example:
     --single-nat-gateway=false`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
 			opts.clusterName = args[0]
+			opts.region = internalaws.Region()
 			return runCreate(cmd.Context(), opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.region, "region", "", "AWS region (required)")
 	cmd.Flags().StringVar(&opts.vpcCidr, "vpc-cidr", "10.0.0.0/16", "CIDR block for the VPC")
 	cmd.Flags().StringVar(&opts.publicSubnetCidrs, "public-subnet-cidrs", "10.0.101.0/24,10.0.102.0/24,10.0.103.0/24", "Comma-separated public subnet CIDRs")
 	cmd.Flags().StringVar(&opts.privateSubnetCidrs, "private-subnet-cidrs", "10.0.0.0/19,10.0.32.0/19,10.0.64.0/19", "Comma-separated private subnet CIDRs")
 	cmd.Flags().StringVar(&opts.availabilityZones, "availability-zones", "", "Comma-separated availability zone names, e.g. us-east-1a,us-east-1b (optional, auto-detected if empty)")
 	cmd.Flags().BoolVar(&opts.singleNatGateway, "single-nat-gateway", true, "Use single NAT gateway (true=cost savings, false=HA per-AZ)")
 	cmd.Flags().BoolVar(&opts.noWait, "no-wait", false, "Return immediately without waiting for stack creation to complete")
-
-	_ = cmd.MarkFlagRequired("region")
 
 	return cmd
 }
@@ -80,7 +81,7 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	fmt.Println()
 
 	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

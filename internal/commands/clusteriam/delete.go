@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/services/clusteriam"
 	"github.com/spf13/cobra"
 )
@@ -29,15 +29,16 @@ Example:
   rosactl cluster-iam delete my-cluster --region us-east-1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
 			opts.clusterName = args[0]
+			opts.region = internalaws.Region()
 			return runDelete(cmd.Context(), opts)
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.region, "region", "", "AWS region (required)")
 	cmd.Flags().BoolVar(&opts.noWait, "no-wait", false, "Return immediately without waiting for stack deletion to complete")
-
-	_ = cmd.MarkFlagRequired("region")
 
 	return cmd
 }
@@ -48,7 +49,7 @@ func runDelete(ctx context.Context, opts *deleteOptions) error {
 	fmt.Println()
 
 	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

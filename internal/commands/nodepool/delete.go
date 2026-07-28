@@ -46,7 +46,7 @@ func runDelete(ctx context.Context, nodepoolID string) error {
 
 	region := cfg.Region
 	if region == "" {
-		region = "us-east-1"
+		return aws.ErrRegionRequired
 	}
 
 	endpoint := fmt.Sprintf("%s/api/v0/nodepools/%s", baseURL, url.PathEscape(nodepoolID))

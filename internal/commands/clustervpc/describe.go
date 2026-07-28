@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws/cloudformation"
 	"github.com/spf13/cobra"
 )
@@ -27,13 +27,14 @@ Example:
   rosactl cluster-vpc describe my-cluster --region us-east-1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
 			opts.clusterName = args[0]
+			opts.region = internalaws.Region()
 			return runDescribe(cmd.Context(), opts)
 		},
 	}
-
-	cmd.Flags().StringVar(&opts.region, "region", "", "AWS region (required)")
-	_ = cmd.MarkFlagRequired("region")
 
 	return cmd
 }
@@ -42,7 +43,7 @@ func runDescribe(ctx context.Context, opts *describeOptions) error {
 	stackName := fmt.Sprintf("rosa-%s-vpc", opts.clusterName)
 
 	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

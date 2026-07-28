@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/bootstrap"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/cluster"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/clusteriam"
@@ -13,6 +14,7 @@ import (
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/login"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/nodepool"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/version"
+	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -24,10 +26,12 @@ var rootCmd = &cobra.Command{
 	Long:  "rosactl is a command-line interface for managing AWS Lambda functions and other resources.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if region, _ := cmd.Flags().GetString("region"); region != "" {
-			_ = os.Setenv("ROSACTL_REGION", region)
+			_ = os.Setenv(internalaws.EnvRegion, region)
+		} else if region, err := pkgconfig.GetRegion(); err == nil {
+			_ = os.Setenv(internalaws.EnvRegion, region)
 		}
 		if profile, _ := cmd.Flags().GetString("profile"); profile != "" {
-			_ = os.Setenv("ROSACTL_PROFILE", profile)
+			_ = os.Setenv(internalaws.EnvProfile, profile)
 		}
 	},
 }

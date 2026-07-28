@@ -5,18 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws/cloudformation"
 	"github.com/spf13/cobra"
 )
 
-type listOptions struct {
-	region string
-}
-
 func newListCommand() *cobra.Command {
-	opts := &listOptions{}
-
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all cluster OIDC provider stacks",
@@ -25,18 +19,18 @@ func newListCommand() *cobra.Command {
 Example:
   rosactl cluster-oidc list --region us-east-1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(cmd.Context(), opts)
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
+			return runList(cmd.Context())
 		},
 	}
-
-	cmd.Flags().StringVar(&opts.region, "region", "", "AWS region (required)")
-	_ = cmd.MarkFlagRequired("region")
 
 	return cmd
 }
 
-func runList(ctx context.Context, opts *listOptions) error {
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+func runList(ctx context.Context) error {
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

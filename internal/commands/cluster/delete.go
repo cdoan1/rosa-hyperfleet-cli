@@ -66,7 +66,7 @@ func runDeleteCluster(ctx context.Context, nameOrID string, opts *deleteOptions)
 
 	region := cfg.Region
 	if region == "" {
-		region = "us-east-1"
+		return aws.ErrRegionRequired
 	}
 
 	// Resolve name → ID if needed (fetchClusterByName matches on both name and ID)
