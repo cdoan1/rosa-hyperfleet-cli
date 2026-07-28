@@ -12,24 +12,47 @@ git clone https://github.com/openshift-online/rosa-hyperfleet-cli.git
 cd rosa-hyperfleet-cli
 make build
 
-# Typical workflow
-rosactl login --url https://api.platform.example.com
-rosactl cluster-vpc create my-cluster --region us-east-1
-rosactl cluster-iam create my-cluster --region us-east-1
-rosactl cluster create my-cluster --region us-east-1
+# Install globally (optional)
+make install
+```
+
+### Basic Usage
+
+```bash
+# Log in to the platform API — stores the URL and infers region for all subsequent commands
+rosactl login --url <platform-api-url>
+
+# Create VPC networking for the cluster (region inferred from login)
+rosactl cluster-vpc create my-cluster
+
+# Create IAM resources (OIDC provider + roles) for the cluster
+rosactl cluster-iam create my-cluster
+
+# Create the cluster (submits to platform API)
+rosactl cluster create my-cluster
+
+# Create OIDC provider using issuer URL from cluster create output
 rosactl cluster-oidc create my-cluster \
-  --oidc-issuer-url <issuer-url-from-cluster-create> --region us-east-1
-rosactl nodepool create my-np --cluster-id <cluster-id> --region us-east-1
+  --oidc-issuer-url <issuer-url-from-cluster-create>
+
+# Create a node pool
+rosactl nodepool create my-np --cluster-id <cluster-id>
+
+# Get kubeconfig
 rosactl cluster kubeconfig my-cluster > ~/.kube/my-cluster
 
 # Teardown (reverse order)
 rosactl nodepool delete <nodepool-id>
-rosactl cluster-oidc delete my-cluster --region us-east-1
-rosactl cluster-iam delete my-cluster --region us-east-1
-rosactl cluster-vpc delete my-cluster --region us-east-1
+rosactl cluster-oidc delete my-cluster
+rosactl cluster-iam delete my-cluster
+rosactl cluster-vpc delete my-cluster
 ```
 
-## Configuration
+> **Tip:** `--region` and `--profile` are global flags available on every command. After
+> `rosactl login`, region is inferred automatically from the stored URL so you don't need
+> to pass `--region` on every invocation.
+
+## Prerequisites
 
 ### AWS Credentials
 
@@ -47,26 +70,31 @@ export AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY
 export AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY
 export AWS_REGION=us-east-1
 
-# Option 3: Named profile
+# Option 3: AWS profile (via environment variable)
 export AWS_PROFILE=your-profile-name
-# or pass --profile your-profile-name to any command
+
+# Option 4: rosactl global flags (override any of the above)
+rosactl --region us-west-2 --profile my-profile cluster-vpc list
 ```
 
 ### Platform API
 
 ```bash
-rosactl login --url https://api.platform.example.com
+rosactl login --url <platform-api-url>
 ```
 
 Stores the base URL in `~/.config/rosactl/config.json`. Required for `cluster` and `nodepool` commands.
 
 ### Global Flags
 
-| Flag | Description |
-|---|---|
-| `--region` | AWS region |
-| `--profile` | AWS named profile |
-| `-v`, `--verbose` | Enable verbose output |
+`--region` and `--profile` are persistent flags on the root command, inherited by every
+subcommand. They take precedence over environment variables and AWS config file settings.
+
+| Flag              | Description                                                                       |
+| ----------------- | --------------------------------------------------------------------------------- |
+| `--region`        | AWS region. If omitted, inferred from the URL stored by `rosactl login`.          |
+| `--profile`       | AWS named profile from `~/.aws/config`. Fails fast if the profile does not exist. |
+| `-v`, `--verbose` | Enable verbose output.                                                            |
 
 ## Commands
 
