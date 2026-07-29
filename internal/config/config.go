@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -134,7 +135,9 @@ func MustGetPlatformAPIURL() string {
 	return url
 }
 
-var awsRegionRe = regexp.MustCompile(`[a-z]+-[a-z]+-\d+`)
+// awsRegionRe matches a single DNS label that is an AWS region name, anchored at both ends.
+// The pattern covers standard regions (us-east-1) and GovCloud (us-gov-west-1).
+var awsRegionRe = regexp.MustCompile(`^[a-z]+-(?:[a-z]+-)+\d+$`)
 
 // GetRegion extracts the AWS region from the stored platform API URL.
 func GetRegion() (string, error) {
@@ -148,10 +151,11 @@ func GetRegion() (string, error) {
 		return "", fmt.Errorf("failed to parse platform API URL: %w", err)
 	}
 
-	region := awsRegionRe.FindString(u.Host)
-	if region == "" {
-		return "", fmt.Errorf("could not determine region from platform API URL: %s", apiURL)
+	for _, label := range strings.Split(u.Hostname(), ".") {
+		if awsRegionRe.MatchString(label) {
+			return label, nil
+		}
 	}
 
-	return region, nil
+	return "", fmt.Errorf("could not determine region from platform API URL: %s", apiURL)
 }

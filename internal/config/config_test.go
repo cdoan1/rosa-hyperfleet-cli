@@ -88,6 +88,11 @@ func TestGetRegion(t *testing.T) {
 			wantRegion: "us-west-2",
 		},
 		{
+			name:       "GovCloud region",
+			url:        "https://api.us-gov-west-1.example.com",
+			wantRegion: "us-gov-west-1",
+		},
+		{
 			name:    "no region in URL",
 			url:     "https://api.example.com",
 			wantErr: true,
