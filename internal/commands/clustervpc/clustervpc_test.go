@@ -2,16 +2,13 @@ package clustervpc
 
 import (
 	"io"
-	"os"
 	"testing"
 
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
-	testutils "github.com/openshift-online/rosa-regional-platform-cli/tests/utils"
 )
 
 func TestClusterVPCCreate_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -25,8 +22,7 @@ func TestClusterVPCCreate_RegionRequired(t *testing.T) {
 }
 
 func TestClusterVPCCreate_RequiresClusterName(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -40,8 +36,7 @@ func TestClusterVPCCreate_RequiresClusterName(t *testing.T) {
 }
 
 func TestClusterVPCDelete_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newDeleteCommand()
 	cmd.SetOut(io.Discard)
@@ -55,8 +50,7 @@ func TestClusterVPCDelete_RegionRequired(t *testing.T) {
 }
 
 func TestClusterVPCDelete_RequiresClusterName(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newDeleteCommand()
 	cmd.SetOut(io.Discard)
@@ -70,8 +64,7 @@ func TestClusterVPCDelete_RequiresClusterName(t *testing.T) {
 }
 
 func TestClusterVPCList_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newListCommand()
 	cmd.SetOut(io.Discard)

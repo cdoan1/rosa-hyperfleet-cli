@@ -2,16 +2,13 @@ package cluster
 
 import (
 	"io"
-	"os"
 	"testing"
 
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
-	testutils "github.com/openshift-online/rosa-regional-platform-cli/tests/utils"
 )
 
 func TestCreateCommand_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -25,8 +22,7 @@ func TestCreateCommand_RegionRequired(t *testing.T) {
 }
 
 func TestCreateCommand_DryRunAndPayloadMutuallyExclusive(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -44,8 +40,7 @@ func TestCreateCommand_DryRunAndPayloadMutuallyExclusive(t *testing.T) {
 }
 
 func TestCreateCommand_RequiresClusterName(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)

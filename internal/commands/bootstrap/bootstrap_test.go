@@ -2,16 +2,13 @@ package bootstrap
 
 import (
 	"io"
-	"os"
 	"testing"
 
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
-	testutils "github.com/openshift-online/rosa-regional-platform-cli/tests/utils"
 )
 
 func TestBootstrapCreate_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -27,8 +24,7 @@ func TestBootstrapCreate_RegionRequired(t *testing.T) {
 }
 
 func TestBootstrapDelete_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newDeleteCommand()
 	cmd.SetOut(io.Discard)
@@ -42,8 +38,7 @@ func TestBootstrapDelete_RegionRequired(t *testing.T) {
 }
 
 func TestBootstrapStatus_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newStatusCommand()
 	cmd.SetOut(io.Discard)

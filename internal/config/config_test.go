@@ -4,26 +4,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	testutils "github.com/openshift-online/rosa-regional-platform-cli/tests/utils"
 )
 
 func TestSaveAndLoad(t *testing.T) {
-	// Create a temporary directory for testing
-	tmpDir, err := os.MkdirTemp("", "rosactl-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// Override the home directory for testing
-	originalHome := os.Getenv("HOME")
-	defer func() { _ = os.Setenv("HOME", originalHome) }()
-	_ = os.Setenv("HOME", tmpDir)
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 
 	// Test saving a config
 	testURL := "https://api.example.com"
-	err = SetPlatformAPIURL(testURL)
+	err := SetPlatformAPIURL(testURL)
 	if err != nil {
 		t.Fatalf("Failed to set platform API URL: %v", err)
 	}
@@ -46,20 +35,11 @@ func TestSaveAndLoad(t *testing.T) {
 }
 
 func TestGetPlatformAPIURL_NotConfigured(t *testing.T) {
-	// Create a temporary directory for testing
-	tmpDir, err := os.MkdirTemp("", "rosactl-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	// Override the home directory for testing
-	originalHome := os.Getenv("HOME")
-	defer func() { _ = os.Setenv("HOME", originalHome) }()
-	_ = os.Setenv("HOME", tmpDir)
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 
 	// Test getting URL when not configured
-	_, err = GetPlatformAPIURL()
+	_, err := GetPlatformAPIURL()
 	if err == nil {
 		t.Error("Expected error when platform API URL is not configured")
 	}
@@ -101,14 +81,8 @@ func TestGetRegion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, err := os.MkdirTemp("", "rosactl-test-*")
-			if err != nil {
-				t.Fatalf("Failed to create temp dir: %v", err)
-			}
-			defer func() { _ = os.RemoveAll(tmpDir) }()
-
-			defer testutils.RestoreEnv("HOME", os.Getenv("HOME"))
-			_ = os.Setenv("HOME", tmpDir)
+			tmpDir := t.TempDir()
+			t.Setenv("HOME", tmpDir)
 
 			if err := SetPlatformAPIURL(tt.url); err != nil {
 				t.Fatalf("SetPlatformAPIURL() error: %v", err)
@@ -132,16 +106,10 @@ func TestGetRegion(t *testing.T) {
 }
 
 func TestGetRegion_NotConfigured(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "rosactl-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 
-	defer testutils.RestoreEnv("HOME", os.Getenv("HOME"))
-	_ = os.Setenv("HOME", tmpDir)
-
-	_, err = GetRegion()
+	_, err := GetRegion()
 	if err == nil {
 		t.Error("GetRegion() expected error when platform URL not configured")
 	}

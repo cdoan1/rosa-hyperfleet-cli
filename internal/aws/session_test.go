@@ -6,47 +6,41 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	testutils "github.com/openshift-online/rosa-regional-platform-cli/tests/utils"
 )
 
 func TestRegion(t *testing.T) {
-	defer testutils.RestoreEnv(EnvRegion, os.Getenv(EnvRegion))
-
-	os.Setenv(EnvRegion, "us-west-2")
+	t.Setenv(EnvRegion, "us-west-2")
 	if got := Region(); got != "us-west-2" {
 		t.Errorf("Region() = %q, want %q", got, "us-west-2")
 	}
 
-	os.Unsetenv(EnvRegion)
+	t.Setenv(EnvRegion, "")
 	if got := Region(); got != "" {
 		t.Errorf("Region() = %q, want empty string when unset", got)
 	}
 }
 
 func TestProfile(t *testing.T) {
-	defer testutils.RestoreEnv(EnvProfile, os.Getenv(EnvProfile))
-
-	os.Setenv(EnvProfile, "my-profile")
+	t.Setenv(EnvProfile, "my-profile")
 	if got := Profile(); got != "my-profile" {
 		t.Errorf("Profile() = %q, want %q", got, "my-profile")
 	}
 
-	os.Unsetenv(EnvProfile)
+	t.Setenv(EnvProfile, "")
 	if got := Profile(); got != "" {
 		t.Errorf("Profile() = %q, want empty string when unset", got)
 	}
 }
 
 func TestRequireRegion(t *testing.T) {
-	defer testutils.RestoreEnv(EnvRegion, os.Getenv(EnvRegion))
+	// Start with EnvRegion empty (os.Getenv returns "" for both unset and "").
+	t.Setenv(EnvRegion, "")
 
-	os.Unsetenv(EnvRegion)
 	if err := RequireRegion(); err != ErrRegionRequired {
 		t.Errorf("RequireRegion() = %v, want ErrRegionRequired", err)
 	}
 
-	os.Setenv(EnvRegion, "us-east-1")
+	t.Setenv(EnvRegion, "us-east-1")
 	if err := RequireRegion(); err != nil {
 		t.Errorf("RequireRegion() = %v, want nil", err)
 	}
@@ -58,13 +52,12 @@ func TestNewConfig_UnknownProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	emptyConfig.Close()
+	if err := emptyConfig.Close(); err != nil {
+		t.Fatal(err)
+	}
 
-	defer testutils.RestoreEnv("AWS_CONFIG_FILE", os.Getenv("AWS_CONFIG_FILE"))
-	os.Setenv("AWS_CONFIG_FILE", emptyConfig.Name())
-
-	defer testutils.RestoreEnv(EnvProfile, os.Getenv(EnvProfile))
-	os.Setenv(EnvProfile, "nonexistent-profile")
+	t.Setenv("AWS_CONFIG_FILE", emptyConfig.Name())
+	t.Setenv(EnvProfile, "nonexistent-profile")
 
 	_, err = NewConfig(context.Background())
 	if err == nil {
@@ -79,8 +72,7 @@ func TestNewConfig_ProfileInCustomConfigFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Isolate from the real ~/.aws/config so only the custom file is seen.
-	defer testutils.RestoreEnv("HOME", os.Getenv("HOME"))
-	os.Setenv("HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Write a custom config file containing the profile we want to validate.
 	configFile := filepath.Join(tmpDir, "aws-config")
@@ -88,14 +80,9 @@ func TestNewConfig_ProfileInCustomConfigFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defer testutils.RestoreEnv("AWS_CONFIG_FILE", os.Getenv("AWS_CONFIG_FILE"))
-	os.Setenv("AWS_CONFIG_FILE", configFile)
-
-	defer testutils.RestoreEnv(EnvProfile, os.Getenv(EnvProfile))
-	os.Setenv(EnvProfile, "my-profile")
-
-	defer testutils.RestoreEnv(EnvRegion, os.Getenv(EnvRegion))
-	os.Setenv(EnvRegion, "eu-central-1")
+	t.Setenv("AWS_CONFIG_FILE", configFile)
+	t.Setenv(EnvProfile, "my-profile")
+	t.Setenv(EnvRegion, "eu-central-1")
 
 	if _, err := NewConfig(context.Background()); err != nil {
 		t.Fatalf("NewConfig() unexpected error for profile in custom AWS_CONFIG_FILE: %v", err)
@@ -103,11 +90,8 @@ func TestNewConfig_ProfileInCustomConfigFile(t *testing.T) {
 }
 
 func TestNewConfig_RegionApplied(t *testing.T) {
-	defer testutils.RestoreEnv(EnvRegion, os.Getenv(EnvRegion))
-	defer testutils.RestoreEnv(EnvProfile, os.Getenv(EnvProfile))
-
-	os.Setenv(EnvRegion, "eu-west-1")
-	os.Unsetenv(EnvProfile)
+	t.Setenv(EnvRegion, "eu-west-1")
+	t.Setenv(EnvProfile, "") // empty means no profile is selected
 
 	cfg, err := NewConfig(context.Background())
 	if err != nil {

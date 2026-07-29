@@ -2,16 +2,13 @@ package clusteroidc
 
 import (
 	"io"
-	"os"
 	"testing"
 
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
-	testutils "github.com/openshift-online/rosa-regional-platform-cli/tests/utils"
 )
 
 func TestClusterOIDCCreate_OIDCURLRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -26,8 +23,7 @@ func TestClusterOIDCCreate_OIDCURLRequired(t *testing.T) {
 }
 
 func TestClusterOIDCCreate_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -41,8 +37,7 @@ func TestClusterOIDCCreate_RegionRequired(t *testing.T) {
 }
 
 func TestClusterOIDCCreate_RequiresClusterName(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
@@ -56,8 +51,7 @@ func TestClusterOIDCCreate_RequiresClusterName(t *testing.T) {
 }
 
 func TestClusterOIDCDelete_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newDeleteCommand()
 	cmd.SetOut(io.Discard)
@@ -71,8 +65,7 @@ func TestClusterOIDCDelete_RegionRequired(t *testing.T) {
 }
 
 func TestClusterOIDCDelete_RequiresClusterName(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Setenv(internalaws.EnvRegion, "us-east-1")
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newDeleteCommand()
 	cmd.SetOut(io.Discard)
@@ -86,8 +79,7 @@ func TestClusterOIDCDelete_RequiresClusterName(t *testing.T) {
 }
 
 func TestClusterOIDCList_RegionRequired(t *testing.T) {
-	defer testutils.RestoreEnv(internalaws.EnvRegion, os.Getenv(internalaws.EnvRegion))
-	os.Unsetenv(internalaws.EnvRegion)
+	t.Setenv(internalaws.EnvRegion, "")
 
 	cmd := newListCommand()
 	cmd.SetOut(io.Discard)
