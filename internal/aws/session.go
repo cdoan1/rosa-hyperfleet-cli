@@ -43,7 +43,19 @@ func NewConfig(ctx context.Context) (aws.Config, error) {
 		// LoadSharedConfigProfile validates the profile exists; the SDK silently
 		// falls back to the default profile if an unknown profile is passed to
 		// LoadDefaultConfig, so this explicit check is necessary.
-		if _, err := config.LoadSharedConfigProfile(ctx, profile); err != nil {
+		//
+		// Pass AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE explicitly so that
+		// profiles defined only in non-default file locations are found. Without
+		// this, LoadSharedConfigProfile always reads the default paths regardless
+		// of those env vars (unlike LoadDefaultConfig which resolves them first).
+		if _, err := config.LoadSharedConfigProfile(ctx, profile, func(o *config.LoadSharedConfigOptions) {
+			if f := os.Getenv("AWS_CONFIG_FILE"); f != "" {
+				o.ConfigFiles = []string{f}
+			}
+			if f := os.Getenv("AWS_SHARED_CREDENTIALS_FILE"); f != "" {
+				o.CredentialsFiles = []string{f}
+			}
+		}); err != nil {
 			return aws.Config{}, fmt.Errorf("profile %q not found: %w", profile, err)
 		}
 		opts = append(opts, config.WithSharedConfigProfile(profile))

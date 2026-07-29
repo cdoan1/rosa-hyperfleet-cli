@@ -3,6 +3,7 @@ package aws
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -71,6 +72,33 @@ func TestNewConfig_UnknownProfile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "nonexistent-profile") {
 		t.Errorf("error should mention profile name, got: %v", err)
+	}
+}
+
+func TestNewConfig_ProfileInCustomConfigFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Isolate from the real ~/.aws/config so only the custom file is seen.
+	defer testutils.RestoreEnv("HOME", os.Getenv("HOME"))
+	os.Setenv("HOME", tmpDir)
+
+	// Write a custom config file containing the profile we want to validate.
+	configFile := filepath.Join(tmpDir, "aws-config")
+	if err := os.WriteFile(configFile, []byte("[profile my-profile]\nregion = eu-central-1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	defer testutils.RestoreEnv("AWS_CONFIG_FILE", os.Getenv("AWS_CONFIG_FILE"))
+	os.Setenv("AWS_CONFIG_FILE", configFile)
+
+	defer testutils.RestoreEnv(EnvProfile, os.Getenv(EnvProfile))
+	os.Setenv(EnvProfile, "my-profile")
+
+	defer testutils.RestoreEnv(EnvRegion, os.Getenv(EnvRegion))
+	os.Setenv(EnvRegion, "eu-central-1")
+
+	if _, err := NewConfig(context.Background()); err != nil {
+		t.Fatalf("NewConfig() unexpected error for profile in custom AWS_CONFIG_FILE: %v", err)
 	}
 }
 
