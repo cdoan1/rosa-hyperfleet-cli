@@ -23,7 +23,7 @@ var verbose bool
 var rootCmd = &cobra.Command{
 	Use:   "rosactl",
 	Short: "CLI tool for managing AWS resources",
-	Long:  "rosactl is a command-line interface for managing AWS Lambda functions and other resources.",
+	Long:  "🚀 rosactl is a command-line interface for ROSA Hyperfleet.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if region, _ := cmd.Flags().GetString("region"); region != "" {
 			_ = os.Setenv(internalaws.EnvRegion, region)
