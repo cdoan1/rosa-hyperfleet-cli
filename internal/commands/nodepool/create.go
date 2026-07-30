@@ -88,7 +88,7 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 
 	region := cfg.Region
 	if region == "" {
-		region = "us-east-1"
+		return aws.ErrRegionRequired
 	}
 
 	// Auto-discover infra from cluster spec and CloudFormation stacks.

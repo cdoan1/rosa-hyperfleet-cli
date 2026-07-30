@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws/cloudformation"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/cloudformation/templates"
 	"github.com/spf13/cobra"
@@ -42,18 +42,20 @@ Example:
     --image-uri 123456789012.dkr.ecr.us-east-1.amazonaws.com/rosa-cli:latest \
     --region us-east-1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
+			opts.region = internalaws.Region()
 			return runCreate(cmd.Context(), opts)
 		},
 	}
 
 	cmd.Flags().StringVar(&opts.imageURI, "image-uri", "", "Container image URI from ECR (required)")
 	cmd.Flags().StringVar(&opts.functionName, "function-name", defaultFunctionName, "Name of the Lambda function")
-	cmd.Flags().StringVar(&opts.region, "region", "", "AWS region (required)")
 	cmd.Flags().StringVar(&opts.stackName, "stack-name", defaultStackName, "Name of the CloudFormation stack")
 	cmd.Flags().BoolVar(&opts.noWait, "no-wait", false, "Return immediately without waiting for stack creation to complete")
 
 	_ = cmd.MarkFlagRequired("image-uri")
-	_ = cmd.MarkFlagRequired("region")
 
 	return cmd
 }
@@ -73,7 +75,7 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	}
 
 	// Load AWS config
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

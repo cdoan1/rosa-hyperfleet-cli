@@ -129,10 +129,6 @@ output example
 [Usage examples]
 ````
 
-**Examples**:
-
-- `feature-e2e.md` - End-to-end testing
-
 ---
 
 ## Writing Style
@@ -145,6 +141,7 @@ output example
 Bootstrap the Lambda function:
 
 ```bash
+# --region is a global flag; if not passed it is inferred from the URL stored by `rosactl login`
 rosactl bootstrap create --image-uri 123456789012.dkr.ecr.us-east-1.amazonaws.com/rosa-cli:latest --region us-east-1
 ```
 ````

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/config"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/services/clusteroidc"
 	"github.com/spf13/cobra"
 )
@@ -39,18 +39,20 @@ Example:
     --region us-east-1`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
 			opts.clusterName = args[0]
+			opts.region = internalaws.Region()
 			return runCreate(cmd.Context(), opts)
 		},
 	}
 
 	cmd.Flags().StringVar(&opts.oidcIssuerURL, "oidc-issuer-url", "", "OIDC issuer URL from the cluster (required)")
 	cmd.Flags().StringVar(&opts.oidcThumbprint, "oidc-thumbprint", "", "TLS thumbprint (optional, fetched automatically if omitted)")
-	cmd.Flags().StringVar(&opts.region, "region", "", "AWS region (required)")
 	cmd.Flags().BoolVar(&opts.noWait, "no-wait", false, "Return immediately without waiting for stack creation to complete")
 
 	_ = cmd.MarkFlagRequired("oidc-issuer-url")
-	_ = cmd.MarkFlagRequired("region")
 
 	return cmd
 }
@@ -66,7 +68,7 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	fmt.Printf("   Region: %s\n", opts.region)
 	fmt.Println()
 
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

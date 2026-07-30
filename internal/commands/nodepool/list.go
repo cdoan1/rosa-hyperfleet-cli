@@ -93,7 +93,7 @@ func runList(ctx context.Context, opts *listOptions) error {
 
 	region := cfg.Region
 	if region == "" {
-		region = "us-east-1"
+		return aws.ErrRegionRequired
 	}
 
 	endpoint := fmt.Sprintf("%s/api/v0/nodepools?limit=%d&offset=%d&clusterId=%s",

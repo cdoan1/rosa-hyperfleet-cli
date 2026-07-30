@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	clusterservice "github.com/openshift-online/rosa-regional-platform-cli/internal/services/cluster"
 	"github.com/spf13/cobra"
@@ -68,6 +68,10 @@ Examples:
   rosactl cluster create my-cluster --region us-east-1 --payload my-cluster.json --placement mgmt-cluster-01`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := internalaws.RequireRegion(); err != nil {
+				return err
+			}
+			opts.region = internalaws.Region()
 			opts.clusterName = args[0]
 
 			// Validate mode: cannot use both --dry-run and --payload
@@ -83,8 +87,6 @@ Examples:
 			return runCreate(cmd.Context(), opts)
 		},
 	}
-
-	cmd.Flags().StringVar(&opts.region, "region", opts.region, "AWS region")
 	cmd.Flags().StringVar(&opts.targetProjectID, "target-project-id", opts.targetProjectID, "Target project ID (dry-run mode only)")
 	cmd.Flags().StringVar(&opts.version, "version", opts.version, "OpenShift version (dry-run mode only)")
 	cmd.Flags().IntVar(&opts.computeReplicas, "compute-replicas", opts.computeReplicas, "Number of compute replicas (dry-run mode only)")
@@ -155,7 +157,7 @@ func getStringField(m map[string]interface{}, key string) string {
 
 func runCreateDryRun(ctx context.Context, opts *createOptions) error {
 	// Load AWS config
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -204,7 +206,7 @@ func runCreateDryRun(ctx context.Context, opts *createOptions) error {
 
 func runCreateAndSubmit(ctx context.Context, opts *createOptions) error {
 	// Load AWS config
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -308,7 +310,7 @@ func runCreateWithPayload(ctx context.Context, opts *createOptions) error {
 	}
 
 	// Load AWS config for SigV4 signing
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(opts.region))
+	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

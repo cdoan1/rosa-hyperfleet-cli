@@ -216,7 +216,7 @@ The handler delegates to the service layer (`internal/services/clustervpc` and `
 
 ### VPC Creation Flow
 
-1. User runs `rosactl cluster-vpc create my-cluster --region us-east-1`
+1. User runs `rosactl cluster-vpc create my-cluster` (region and profile resolved from `--region`/`--profile` flags; region may also be inferred from the URL stored by `rosactl login`)
 2. CLI validates cluster name and CIDR ranges
 3. CLI reads embedded VPC template
 4. CLI loads AWS credentials and creates CloudFormation client
@@ -240,7 +240,7 @@ The handler delegates to the service layer (`internal/services/clustervpc` and `
 
 ### Stack Deletion Flow
 
-1. User runs `rosactl cluster-iam delete my-cluster --region us-east-1`
+1. User runs `rosactl cluster-iam delete my-cluster` (region and profile resolved from `--region`/`--profile` flags; region may also be inferred from the URL stored by `rosactl login`)
 2. CLI loads AWS credentials and creates CloudFormation client
 3. CLI calls DeleteStack with stack name `rosa-my-cluster-iam`
 4. CloudFormation deletes all resources in reverse dependency order
