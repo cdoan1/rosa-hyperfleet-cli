@@ -120,19 +120,21 @@ func GenerateClusterConfig(ctx context.Context, req *GenerateClusterConfigReques
 	}
 
 	// Build labels
-	labels := map[string]interface{}{
+	labels := map[string]string{
 		"environment": req.LabelEnvironment,
 		"team":        req.LabelTeam,
 		"region":      req.Region,
 	}
 
-	// Build the cluster object
+	// Build the cluster object with Kubernetes-style structure
 	clusterObj := map[string]interface{}{
-		"kind":              "Cluster",
-		"name":              req.ClusterName,
-		"target_project_id": req.TargetProjectID,
-		"labels":            labels,
-		"spec":              spec,
+		"apiVersion": "hyperfleet.io/v1alpha1",
+		"kind":       "Cluster",
+		"metadata": map[string]interface{}{
+			"name":   req.ClusterName,
+			"labels": labels,
+		},
+		"spec": spec,
 	}
 
 	return &GenerateClusterConfigResponse{
@@ -224,10 +226,6 @@ func SubmitCluster(ctx context.Context, req *SubmitClusterRequest) (*SubmitClust
 	if err := json.Unmarshal(payloadBytes, &cluster); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal into Cluster type: %w", err)
 	}
-
-	// Ensure TypeMeta is set
-	cluster.APIVersion = "hyperfleet.io/v1alpha1"
-	cluster.Kind = "Cluster"
 
 	// Create the cluster via the SDK
 	created, err := cs.HyperfleetV1alpha1().Clusters().Create(ctx, &cluster, platform.CreateOptions{})

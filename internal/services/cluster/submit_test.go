@@ -13,10 +13,17 @@ func TestSubmitCluster_PayloadConversion(t *testing.T) {
 	// to accept an injectable clientset instead of creating one internally.
 
 	// Build a test payload (similar to what the CLI creates)
+	// Uses Kubernetes-style structure with metadata object
 	payload := map[string]interface{}{
-		"kind":              "Cluster",
-		"name":              "test-cluster",
-		"target_project_id": "test-project",
+		"apiVersion": "hyperfleet.io/v1alpha1",
+		"kind":       "Cluster",
+		"metadata": map[string]interface{}{
+			"name": "test-cluster",
+			"labels": map[string]string{
+				"team":        "platform",
+				"environment": "dev",
+			},
+		},
 		"spec": map[string]interface{}{
 			"hostedCluster": map[string]interface{}{
 				"release": map[string]interface{}{
@@ -34,8 +41,15 @@ func TestSubmitCluster_PayloadConversion(t *testing.T) {
 
 	// Test the payload structure
 	t.Run("payload structure", func(t *testing.T) {
-		if payload["name"] != "test-cluster" {
-			t.Errorf("expected cluster name test-cluster, got %v", payload["name"])
+		if payload["apiVersion"] != "hyperfleet.io/v1alpha1" {
+			t.Errorf("expected apiVersion hyperfleet.io/v1alpha1, got %v", payload["apiVersion"])
+		}
+		if metadata, ok := payload["metadata"].(map[string]interface{}); ok {
+			if metadata["name"] != "test-cluster" {
+				t.Errorf("expected cluster name test-cluster, got %v", metadata["name"])
+			}
+		} else {
+			t.Error("expected metadata object")
 		}
 		if spec, ok := payload["spec"].(map[string]interface{}); ok {
 			if hc, ok := spec["hostedCluster"].(map[string]interface{}); ok {
@@ -52,7 +66,11 @@ func TestSubmitCluster_PayloadConversion(t *testing.T) {
 func TestSubmitCluster_OverridesPlacement(t *testing.T) {
 	// Test that placement override is properly applied
 	payload := map[string]interface{}{
-		"name": "test-cluster",
+		"apiVersion": "hyperfleet.io/v1alpha1",
+		"kind":       "Cluster",
+		"metadata": map[string]interface{}{
+			"name": "test-cluster",
+		},
 		"spec": map[string]interface{}{
 			"placement": "original-placement",
 		},
