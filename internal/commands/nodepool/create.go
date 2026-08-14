@@ -136,10 +136,14 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 		}
 	}
 
-	// Build the payload as a map for easier construction
+	// Build the payload with Kubernetes-style structure
 	payload := map[string]interface{}{
-		"cluster_id": opts.clusterID,
-		"name":       opts.name,
+		"apiVersion": "hyperfleet.io/v1alpha1",
+		"kind":       "NodePool",
+		"metadata": map[string]interface{}{
+			"name":      opts.name,
+			"namespace": opts.clusterID, // NodePools are namespaced by cluster ID
+		},
 		"spec": map[string]interface{}{
 			"nodePool": map[string]interface{}{
 				"replicas": opts.replicas,
@@ -166,10 +170,6 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	if err := json.Unmarshal(payloadBytes, &nodepool); err != nil {
 		return fmt.Errorf("failed to unmarshal into NodePool type: %w", err)
 	}
-
-	// Ensure TypeMeta is set
-	nodepool.APIVersion = "hyperfleet.io/v1alpha1"
-	nodepool.Kind = "NodePool"
 
 	// Create the nodepool via SDK
 	// Note: NodePools are namespaced by cluster ID
