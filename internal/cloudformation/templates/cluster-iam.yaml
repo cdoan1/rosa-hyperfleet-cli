@@ -155,7 +155,7 @@ Resources:
                 "Action": "sts:AssumeRoleWithWebIdentity",
                 "Condition": {
                   "StringEquals": {
-                    "${OIDCIssuerDomain}:sub": "system:serviceaccount:openshift-image-registry:cluster-image-registry-operator",
+                    "${OIDCIssuerDomain}:sub": "system:serviceaccount:openshift-image-registry:registry",
                     "${OIDCIssuerDomain}:aud": "openshift"
                   }
                 }
