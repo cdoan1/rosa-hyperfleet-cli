@@ -40,3 +40,5 @@ Desktop.ini
 # Build output
 /bin/
 /dist/
+
+hack/tools/bin
