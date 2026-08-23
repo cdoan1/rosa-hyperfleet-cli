@@ -1,4 +1,4 @@
 build_root_image:
-  project_image:
-    dockerfile_path: ci/Containerfile
-
+  name: release
+  namespace: openshift
+  tag: rhel-9-release-golang-1.26-openshift-4.23

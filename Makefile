@@ -9,6 +9,13 @@ GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 VERSION=$(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.0")
 LDFLAGS=-ldflags "-X github.com/openshift-online/rosa-regional-platform-cli/internal/commands/version.GitCommit=$(GIT_COMMIT) -X github.com/openshift-online/rosa-regional-platform-cli/internal/commands/version.Version=$(VERSION)"
 
+TOOLS_DIR        := ./hack/tools
+TOOLS_BIN_DIR    := $(TOOLS_DIR)/bin
+GOLANGCI_LINT    := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
+
+$(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod
+	cd $(TOOLS_DIR); go build -tags=tools -o $(abspath $(TOOLS_BIN_DIR))/golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+
 all: fmt vet lint test build
 	@echo ""
 	@echo "✓ All checks and build completed successfully!"
@@ -148,15 +155,9 @@ vet:
 	@go vet ./...
 	@echo "✓ go vet passed"
 
-lint:
+lint: $(GOLANGCI_LINT)
 	@echo "Running golangci-lint..."
-	@if ! command -v golangci-lint &> /dev/null; then \
-		echo "Error: golangci-lint not found"; \
-		echo "Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
-		echo "Or visit: https://golangci-lint.run/welcome/install/"; \
-		exit 1; \
-	fi
-	@golangci-lint run --timeout=5m ./...
+	@$(GOLANGCI_LINT) run --timeout=5m ./...
 	@echo "✓ golangci-lint passed"
 
 verify: fmt-check vet lint
