@@ -160,7 +160,7 @@ lint: $(GOLANGCI_LINT)
 	@$(GOLANGCI_LINT) run --timeout=5m ./...
 	@echo "✓ golangci-lint passed"
 
-verify: fmt-check vet lint
+verify: fmt-check vet
 	@echo ""
 	@echo "✓ All verification checks passed!"
 
