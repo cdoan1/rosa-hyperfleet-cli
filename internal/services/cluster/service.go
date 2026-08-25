@@ -1,23 +1,22 @@
 package cluster
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
+	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/platform"
+	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws/cloudformation"
+	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 )
 
 // GenerateClusterConfigRequest contains parameters for generating cluster configuration
@@ -38,12 +37,12 @@ type GenerateClusterConfigRequest struct {
 
 // GenerateClusterConfigResponse contains the generated cluster configuration
 type GenerateClusterConfigResponse struct {
-	ClusterConfig map[string]interface{}
+	Cluster *v1alpha1.Cluster
 }
 
 // SubmitClusterRequest contains parameters for submitting cluster to platform API
 type SubmitClusterRequest struct {
-	Payload           map[string]interface{}
+	Cluster           *v1alpha1.Cluster
 	PlatformAPIURL    string
 	PlacementOverride string // Optional - overrides placement in payload if set
 	AWSConfig         aws.Config
@@ -51,7 +50,7 @@ type SubmitClusterRequest struct {
 
 // SubmitClusterResponse contains the API response
 type SubmitClusterResponse struct {
-	Response map[string]interface{}
+	Cluster *v1alpha1.Cluster
 }
 
 // GenerateClusterConfig generates a cluster configuration by querying CloudFormation stacks.
@@ -130,17 +129,29 @@ func GenerateClusterConfig(ctx context.Context, req *GenerateClusterConfigReques
 		"region":      req.Region,
 	}
 
-	// Build the cluster object
+	// Build the cluster object with proper Kubernetes structure
 	clusterObj := map[string]interface{}{
-		"kind":              "Cluster",
-		"name":              req.ClusterName,
-		"target_project_id": req.TargetProjectID,
-		"labels":            labels,
-		"spec":              spec,
+		"kind": "Cluster",
+		"metadata": map[string]interface{}{
+			"name":   req.ClusterName,
+			"labels": labels,
+		},
+		"spec": spec,
+	}
+
+	// Convert to typed struct
+	clusterBytes, err := json.Marshal(clusterObj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal cluster: %w", err)
+	}
+
+	var cluster v1alpha1.Cluster
+	if err := json.Unmarshal(clusterBytes, &cluster); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal cluster: %w", err)
 	}
 
 	return &GenerateClusterConfigResponse{
-		ClusterConfig: clusterObj,
+		Cluster: &cluster,
 	}, nil
 }
 
@@ -198,88 +209,68 @@ func computeIAMRoleARNs(clusterName, accountID string) map[string]string {
 
 // SubmitCluster submits a cluster configuration to the platform API
 func SubmitCluster(ctx context.Context, req *SubmitClusterRequest) (*SubmitClusterResponse, error) {
-	// Make a copy of the payload to avoid modifying the original
-	payload := make(map[string]interface{})
-	for k, v := range req.Payload {
-		payload[k] = v
-	}
+	cluster := req.Cluster
 
 	// Override placement if specified
 	if req.PlacementOverride != "" {
-		if spec, ok := payload["spec"].(map[string]interface{}); ok {
+		// Need to convert to map, modify, then convert back to preserve placement override
+		clusterBytes, err := json.Marshal(cluster)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal cluster: %w", err)
+		}
+
+		var clusterMap map[string]interface{}
+		if err := json.Unmarshal(clusterBytes, &clusterMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal to map: %w", err)
+		}
+
+		if spec, ok := clusterMap["spec"].(map[string]interface{}); ok {
 			spec["placement"] = req.PlacementOverride
 		}
+
+		// Convert back to typed struct
+		modifiedBytes, err := json.Marshal(clusterMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal modified cluster: %w", err)
+		}
+
+		var modifiedCluster v1alpha1.Cluster
+		if err := json.Unmarshal(modifiedBytes, &modifiedCluster); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal modified cluster: %w", err)
+		}
+		cluster = &modifiedCluster
 	}
 
-	// Marshal payload to JSON
-	payloadBytes, err := json.Marshal(payload)
+	// Load AWS config
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Build the API endpoint URL
-	endpoint := fmt.Sprintf("%s/api/v0/clusters", req.PlatformAPIURL)
-
-	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payloadBytes))
+	// Get account ID
+	accountID, err := pkgconfig.GetAccountID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to get account ID: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Calculate SHA256 hash of the request body
-	hash := sha256.Sum256(payloadBytes)
-	payloadHash := hex.EncodeToString(hash[:])
-
-	// Sign the request with AWS SigV4
-	signer := v4.NewSigner()
-	creds, err := req.AWSConfig.Credentials.Retrieve(ctx)
+	// Create clientset
+	cs, err := hyperfleet.NewForConfig(&hfrest.Config{
+		Host:      req.PlatformAPIURL,
+		AccountID: accountID,
+		AWSConfig: awsCfg,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve AWS credentials: %w", err)
+		return nil, fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	// Determine the region from AWS config
-	region := req.AWSConfig.Region
-	if region == "" {
-		region = "us-east-1" // Default region
-	}
-
-	err = signer.SignHTTP(ctx, creds, httpReq, payloadHash, "execute-api", region, time.Now())
+	// Create cluster via clientset
+	createdCluster, err := cs.HyperfleetV1alpha1().Clusters().Create(ctx, cluster, platform.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign request: %w", err)
-	}
-
-	// Execute the request
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Check for error responses
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse the JSON response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to create cluster: %w", err)
 	}
 
 	return &SubmitClusterResponse{
-		Response: result,
+		Cluster: createdCluster,
 	}, nil
 }
 

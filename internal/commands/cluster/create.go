@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	clusterservice "github.com/openshift-online/rosa-regional-platform-cli/internal/services/cluster"
@@ -119,40 +120,20 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	return runCreateAndSubmit(ctx, opts)
 }
 
-func printClusterSummary(response map[string]interface{}) {
-	// Extract key fields from the response
-	name := getStringField(response, "name")
-	id := getStringField(response, "id")
-	version := getStringField(response, "version")
-
-	oidcIssuerURL := getStringField(response, "oidc_issuer_url")
-
+func printClusterSummary(cluster *v1alpha1.Cluster) {
 	// Print summary
 	fmt.Println("\n✓ Cluster created successfully")
 	fmt.Printf("\nCluster Details:\n")
-	if name != "" {
-		fmt.Printf("  Name:           %s\n", name)
+	fmt.Printf("  Name:           %s\n", cluster.Name)
+	fmt.Printf("  ID:             %s\n", cluster.UID)
+	if cluster.Status.Version != "" {
+		fmt.Printf("  Version:        %s\n", cluster.Status.Version)
 	}
-	if id != "" {
-		fmt.Printf("  ID:             %s\n", id)
-	}
-	if version != "" {
-		fmt.Printf("  Version:        %s\n", version)
-	}
-	if oidcIssuerURL != "" {
-		fmt.Printf("  OIDC Issuer URL: %s\n", oidcIssuerURL)
+	if cluster.Spec.HostedCluster.IssuerURL != "" {
+		fmt.Printf("  OIDC Issuer URL: %s\n", cluster.Spec.HostedCluster.IssuerURL)
 		fmt.Printf("\nNext step:\n")
-		fmt.Printf("  rosactl cluster-oidc create %s --oidc-issuer-url %s --region <region>\n", name, oidcIssuerURL)
+		fmt.Printf("  rosactl cluster-oidc create %s --oidc-issuer-url %s --region <region>\n", cluster.Name, cluster.Spec.HostedCluster.IssuerURL)
 	}
-}
-
-func getStringField(m map[string]interface{}, key string) string {
-	if val, ok := m[key]; ok {
-		if strVal, ok := val.(string); ok {
-			return strVal
-		}
-	}
-	return ""
 }
 
 func runCreateDryRun(ctx context.Context, opts *createOptions) error {
@@ -185,7 +166,7 @@ func runCreateDryRun(ctx context.Context, opts *createOptions) error {
 	}
 
 	// Convert to JSON
-	jsonBytes, err := json.MarshalIndent(resp.ClusterConfig, "", "  ")
+	jsonBytes, err := json.MarshalIndent(resp.Cluster, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal cluster object: %w", err)
 	}
@@ -235,7 +216,7 @@ func runCreateAndSubmit(ctx context.Context, opts *createOptions) error {
 
 	// Optionally save to file if output file was explicitly specified
 	if opts.outputFile != "" {
-		jsonBytes, err := json.MarshalIndent(genResp.ClusterConfig, "", "  ")
+		jsonBytes, err := json.MarshalIndent(genResp.Cluster, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal cluster object: %w", err)
 		}
@@ -255,7 +236,7 @@ func runCreateAndSubmit(ctx context.Context, opts *createOptions) error {
 
 	// Submit cluster to platform API
 	submitReq := &clusterservice.SubmitClusterRequest{
-		Payload:        genResp.ClusterConfig,
+		Cluster:        genResp.Cluster,
 		PlatformAPIURL: baseURL,
 		AWSConfig:      cfg,
 	}
@@ -271,14 +252,14 @@ func runCreateAndSubmit(ctx context.Context, opts *createOptions) error {
 
 	// Output response based on format
 	if opts.output == "json" {
-		jsonBytes, err := json.MarshalIndent(submitResp.Response, "", "  ")
+		jsonBytes, err := json.MarshalIndent(submitResp.Cluster, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal response: %w", err)
 		}
 		fmt.Println(string(jsonBytes))
 	} else {
 		// Extract and display key fields from response
-		printClusterSummary(submitResp.Response)
+		printClusterSummary(submitResp.Cluster)
 	}
 
 	return nil
@@ -315,6 +296,18 @@ func runCreateWithPayload(ctx context.Context, opts *createOptions) error {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
+	// Convert payload map to typed struct (reuse payloadBytes from ReadFile)
+	payloadBytes, err = json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	var cluster v1alpha1.Cluster
+	err = json.Unmarshal(payloadBytes, &cluster)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal cluster: %w", err)
+	}
+
 	// Check if placement is being overridden
 	var placementOverride string
 	if opts.placementCluster != "" {
@@ -329,7 +322,7 @@ func runCreateWithPayload(ctx context.Context, opts *createOptions) error {
 
 	// Build service request
 	req := &clusterservice.SubmitClusterRequest{
-		Payload:           payload,
+		Cluster:           &cluster,
 		PlatformAPIURL:    baseURL,
 		PlacementOverride: placementOverride,
 		AWSConfig:         cfg,
@@ -343,14 +336,14 @@ func runCreateWithPayload(ctx context.Context, opts *createOptions) error {
 
 	// Output response based on format
 	if opts.output == "json" {
-		jsonBytes, err := json.MarshalIndent(resp.Response, "", "  ")
+		jsonBytes, err := json.MarshalIndent(resp.Cluster, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal response: %w", err)
 		}
 		fmt.Println(string(jsonBytes))
 	} else {
 		// Extract and display key fields from response
-		printClusterSummary(resp.Response)
+		printClusterSummary(resp.Cluster)
 	}
 
 	return nil

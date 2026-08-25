@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
+	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/platform"
+	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws/cloudformation"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/config"
@@ -98,7 +102,7 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 			return fmt.Errorf("failed to fetch cluster spec for auto-discovery: %w", err)
 		}
 		if opts.subnetID == "" {
-			opts.subnetID = extractSubnetFromClusterSpec(cluster.Spec)
+			opts.subnetID = extractSubnetFromClusterSpec(cluster)
 		}
 		if opts.instanceProfile == "" || opts.securityGroups == "" {
 			cfnClient := cloudformation.NewClient(cfg)
@@ -141,8 +145,10 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	}
 
 	payload := map[string]interface{}{
-		"cluster_id": opts.clusterID,
-		"name":       opts.name,
+		"metadata": map[string]interface{}{
+			"name": opts.name,
+			// namespace is automatically set by clientset from NodePools(clusterID) parameter
+		},
 		"spec": map[string]interface{}{
 			"nodePool": map[string]interface{}{
 				"replicas": opts.replicas,
@@ -159,28 +165,51 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 		},
 	}
 
+	// Convert map to v1alpha1.NodePool
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v0/nodepools", baseURL)
-	body, statusCode, err := signedPost(ctx, endpoint, payloadBytes, creds, region)
+	var nodepool v1alpha1.NodePool
+	if err := json.Unmarshal(payloadBytes, &nodepool); err != nil {
+		return fmt.Errorf("failed to unmarshal nodepool: %w", err)
+	}
+
+	// Load AWS config for clientset
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	if statusCode != 201 {
-		return fmt.Errorf("API request failed with status %d: %s", statusCode, string(body))
+	accountID, err := config.GetAccountID()
+	if err != nil {
+		return fmt.Errorf("failed to get account ID: %w", err)
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+	// Create clientset
+	cs, err := hyperfleet.NewForConfig(&hfrest.Config{
+		Host:      baseURL,
+		AccountID: accountID,
+		AWSConfig: awsCfg,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	// Create nodepool via clientset (namespace = cluster-<uuid> format)
+	// The API expects the namespace in "cluster-<uuid>" format
+	namespace := "cluster-" + opts.clusterID
+	createdNodepool, err := cs.HyperfleetV1alpha1().NodePools(namespace).Create(ctx, &nodepool, platform.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create nodepool: %w", err)
 	}
 
 	if opts.output == "json" {
-		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		prettyJSON, err := json.MarshalIndent(createdNodepool, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
 		fmt.Println(string(prettyJSON))
 		return nil
 	}
@@ -188,9 +217,7 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	fmt.Fprintf(os.Stderr, "\n✓ NodePool created successfully\n")
 	fmt.Fprintf(os.Stderr, "\nNodePool Details:\n")
 	fmt.Fprintf(os.Stderr, "  Name:          %s\n", opts.name)
-	if id, ok := result["id"].(string); ok {
-		fmt.Fprintf(os.Stderr, "  ID:            %s\n", id)
-	}
+	fmt.Fprintf(os.Stderr, "  ID:            %s\n", string(createdNodepool.UID))
 	fmt.Fprintf(os.Stderr, "  Cluster:       %s\n", opts.clusterID)
 	fmt.Fprintf(os.Stderr, "  Replicas:      %d\n", opts.replicas)
 	fmt.Fprintf(os.Stderr, "  Instance Type: %s\n", opts.instanceType)
@@ -198,50 +225,40 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	return nil
 }
 
-type clusterResponse struct {
-	ID   string                 `json:"id"`
-	Name string                 `json:"name"`
-	Spec map[string]interface{} `json:"spec"`
+func extractSubnetFromClusterSpec(cluster *v1alpha1.Cluster) string {
+	if cluster.Spec.HostedCluster.Platform.AWS != nil &&
+		cluster.Spec.HostedCluster.Platform.AWS.CloudProviderConfig != nil &&
+		cluster.Spec.HostedCluster.Platform.AWS.CloudProviderConfig.Subnet != nil &&
+		cluster.Spec.HostedCluster.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
+		return *cluster.Spec.HostedCluster.Platform.AWS.CloudProviderConfig.Subnet.ID
+	}
+	return ""
 }
 
-func extractSubnetFromClusterSpec(spec map[string]interface{}) string {
-	hc, _ := spec["hostedCluster"].(map[string]interface{})
-	if hc == nil {
-		return ""
-	}
-	platform, _ := hc["platform"].(map[string]interface{})
-	if platform == nil {
-		return ""
-	}
-	awsPlat, _ := platform["aws"].(map[string]interface{})
-	if awsPlat == nil {
-		return ""
-	}
-	cpc, _ := awsPlat["cloudProviderConfig"].(map[string]interface{})
-	if cpc == nil {
-		return ""
-	}
-	subnet, _ := cpc["subnet"].(map[string]interface{})
-	if subnet == nil {
-		return ""
-	}
-	id, _ := subnet["id"].(string)
-	return id
-}
-
-func fetchClusterSpec(ctx context.Context, baseURL, clusterID string, creds awssdk.Credentials, region string) (*clusterResponse, error) {
-	endpoint := fmt.Sprintf("%s/api/v0/clusters/%s", baseURL, url.PathEscape(clusterID))
-	body, statusCode, err := signedGet(ctx, endpoint, creds, region)
+func fetchClusterSpec(ctx context.Context, baseURL, clusterID string, creds awssdk.Credentials, region string) (*v1alpha1.Cluster, error) {
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if statusCode != 200 {
-		return nil, fmt.Errorf("failed to get cluster %s: status %d: %s", clusterID, statusCode, string(body))
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	var cluster clusterResponse
-	if err := json.Unmarshal(body, &cluster); err != nil {
-		return nil, fmt.Errorf("failed to parse cluster response: %w", err)
+	accountID, err := config.GetAccountID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account ID: %w", err)
 	}
-	return &cluster, nil
+
+	cs, err := hyperfleet.NewForConfig(&hfrest.Config{
+		Host:      baseURL,
+		AccountID: accountID,
+		AWSConfig: awsCfg,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	cluster, err := cs.HyperfleetV1alpha1().Clusters().Get(ctx, clusterID, platform.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cluster %s: %w", clusterID, err)
+	}
+
+	return cluster, nil
 }
