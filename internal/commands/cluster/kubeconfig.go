@@ -71,7 +71,7 @@ func runKubeconfig(ctx context.Context, nameOrID string) error {
 		return err
 	}
 
-	apiEndpoint, err := fetchAPIURL(ctx, baseURL, cluster.ID, creds, region)
+	apiEndpoint, err := fetchAPIURL(ctx, baseURL, string(cluster.UID), creds, region)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func runKubeconfig(ctx context.Context, nameOrID string) error {
 		Server:      apiEndpoint,
 		ClusterName: cluster.Name,
 		RosactlPath: rosactlPath,
-		ClusterID:   cluster.ID,
+		ClusterID:   string(cluster.UID),
 		Region:      region,
 	}); err != nil {
 		return fmt.Errorf("failed to render kubeconfig: %w", err)

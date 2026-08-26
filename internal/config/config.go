@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -8,6 +9,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 const (
@@ -158,4 +162,25 @@ func GetRegion() (string, error) {
 	}
 
 	return "", fmt.Errorf("could not determine region from platform API URL: %s", apiURL)
+}
+
+// GetAccountID retrieves the AWS account ID using STS GetCallerIdentity
+func GetAccountID() (string, error) {
+	ctx := context.Background()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	stsClient := sts.NewFromConfig(cfg)
+	result, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get caller identity: %w", err)
+	}
+
+	if result.Account == nil {
+		return "", fmt.Errorf("account ID not found in caller identity")
+	}
+
+	return *result.Account, nil
 }

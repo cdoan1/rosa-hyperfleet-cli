@@ -4,15 +4,18 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/platform"
+	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	"github.com/spf13/cobra"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 type deleteOptions struct {
@@ -59,24 +62,42 @@ func runDeleteCluster(ctx context.Context, nameOrID string, opts *deleteOptions)
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	creds, err := cfg.Credentials.Retrieve(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve AWS credentials: %w", err)
-	}
-
 	region := cfg.Region
 	if region == "" {
 		return aws.ErrRegionRequired
 	}
 
+	// Load AWS config for clientset
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	accountID, err := config.GetAccountID()
+	if err != nil {
+		return fmt.Errorf("failed to get account ID: %w", err)
+	}
+
+	// Create clientset
+	cs, err := hyperfleet.NewForConfig(&hfrest.Config{
+		Host:      baseURL,
+		AccountID: accountID,
+		AWSConfig: awsCfg,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
 	// Resolve name → ID if needed (fetchClusterByName matches on both name and ID)
+	// Note: fetchClusterByName creates its own clientset internally
+	creds, _ := awsCfg.Credentials.Retrieve(ctx)
 	cluster, err := fetchClusterByName(ctx, baseURL, nameOrID, creds, region)
 	if err != nil {
 		return err
 	}
 
 	if !opts.yes {
-		fmt.Fprintf(os.Stderr, "Are you sure you want to delete cluster %q (ID: %s)? [y/N] ", cluster.Name, cluster.ID)
+		fmt.Fprintf(os.Stderr, "Are you sure you want to delete cluster %q (ID: %s)? [y/N] ", cluster.Name, string(cluster.UID))
 		reader := bufio.NewReader(os.Stdin)
 		answer, err := reader.ReadString('\n')
 		if err != nil {
@@ -88,20 +109,15 @@ func runDeleteCluster(ctx context.Context, nameOrID string, opts *deleteOptions)
 		}
 	}
 
-	endpoint := fmt.Sprintf("%s/api/v0/clusters/%s", baseURL, url.PathEscape(cluster.ID))
-	body, statusCode, err := signedDelete(ctx, endpoint, creds, region)
-	if err != nil {
-		return fmt.Errorf("delete request failed: %w", err)
+	// Delete cluster via clientset
+	if err := cs.HyperfleetV1alpha1().Clusters().Delete(ctx, string(cluster.UID), platform.DeleteOptions{}); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return fmt.Errorf("cluster %q not found (may have already been deleted)", nameOrID)
+		}
+		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 
-	switch statusCode {
-	case http.StatusAccepted:
-		fmt.Fprintf(os.Stderr, "Cluster %q (ID: %s) deletion initiated.\n", cluster.Name, cluster.ID)
-	case http.StatusNotFound:
-		return fmt.Errorf("cluster %q not found (may have already been deleted)", nameOrID)
-	default:
-		return fmt.Errorf("API request failed with status %d: %s", statusCode, string(body))
-	}
+	fmt.Fprintf(os.Stderr, "Cluster %q (ID: %s) deletion initiated.\n", cluster.Name, string(cluster.UID))
 
 	if !opts.wait {
 		return nil
@@ -112,15 +128,14 @@ func runDeleteCluster(ctx context.Context, nameOrID string, opts *deleteOptions)
 		pollInterval = 15 * time.Second
 		timeout      = 10 * time.Minute
 	)
+
 	deadline := time.Now().Add(timeout)
-	checkEndpoint := fmt.Sprintf("%s/api/v0/clusters/%s", baseURL, url.PathEscape(cluster.ID))
 	for time.Now().Before(deadline) {
 		time.Sleep(pollInterval)
 
-		_, err := signedGet(ctx, checkEndpoint, creds, region)
+		_, err := cs.HyperfleetV1alpha1().Clusters().Get(ctx, string(cluster.UID), platform.GetOptions{})
 		if err != nil {
-			// signedGet returns an error for non-200; a 404/410 means deletion is complete
-			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "410") {
+			if k8serrors.IsNotFound(err) {
 				fmt.Fprintf(os.Stderr, "Cluster %q deleted successfully.\n", cluster.Name)
 				return nil
 			}

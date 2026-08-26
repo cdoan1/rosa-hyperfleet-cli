@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"text/tabwriter"
 
-	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	v1alpha1 "github.com/openshift-online/rosa-hyperfleet-api/api/v1alpha1/public"
+	hyperfleet "github.com/openshift-online/rosa-hyperfleet-api/clientset"
+	"github.com/openshift-online/rosa-hyperfleet-api/clientset/platform"
+	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type listOptions struct {
@@ -18,37 +22,6 @@ type listOptions struct {
 	offset int
 	status string
 	output string
-}
-
-type clusterSpec struct {
-	Placement string `json:"placement"`
-	Version   string `json:"version"`
-	CloudURL  string `json:"oidcIssuerURL"`
-}
-
-type condition struct {
-	Type    string `json:"type"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
-}
-
-type clusterStatus struct {
-	Conditions []condition `json:"conditions"`
-}
-
-type clusterItem struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	CreatedAt string        `json:"created_at"`
-	Spec      clusterSpec   `json:"spec"`
-	Status    clusterStatus `json:"status"`
-}
-
-type listResponse struct {
-	Items  []clusterItem `json:"items"`
-	Total  int           `json:"total"`
-	Limit  int           `json:"limit"`
-	Offset int           `json:"offset"`
 }
 
 func newListCommand() *cobra.Command {
@@ -87,51 +60,48 @@ func runList(ctx context.Context, opts *listOptions) error {
 		return err
 	}
 
-	cfg, err := aws.NewConfig(ctx)
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	creds, err := cfg.Credentials.Retrieve(ctx)
+	accountID, err := config.GetAccountID()
 	if err != nil {
-		return fmt.Errorf("failed to retrieve AWS credentials: %w", err)
+		return fmt.Errorf("failed to get account ID: %w", err)
 	}
 
-	region := cfg.Region
-	if region == "" {
-		region = "us-east-1"
-	}
-
-	endpoint := fmt.Sprintf("%s/api/v0/clusters?limit=%d&offset=%d", baseURL, opts.limit, opts.offset)
-	if opts.status != "" {
-		endpoint = fmt.Sprintf("%s&status=%s", endpoint, url.QueryEscape(opts.status))
-	}
-
-	body, err := signedGet(ctx, endpoint, creds, region)
+	cs, err := hyperfleet.NewForConfig(&hfrest.Config{
+		Host:      baseURL,
+		AccountID: accountID,
+		AWSConfig: awsCfg,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	listOpts := platform.ListOptions{
+		Limit:  int64(opts.limit),
+		Offset: int64(opts.offset),
+	}
+
+	clusterList, err := cs.HyperfleetV1alpha1().Clusters().List(ctx, listOpts)
+	if err != nil {
+		return fmt.Errorf("failed to list clusters: %w", err)
 	}
 
 	if opts.output == "json" {
-		var result map[string]interface{}
-		if err := json.Unmarshal(body, &result); err != nil {
-			fmt.Println(string(body))
-			return nil
+		prettyJSON, err := json.MarshalIndent(clusterList, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
 		}
-		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(prettyJSON))
 		return nil
 	}
 
-	var result listResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return displayTable(result.Items)
+	return displayTable(clusterList.Items)
 }
 
-func displayTable(clusters []clusterItem) error {
+func displayTable(clusters []v1alpha1.Cluster) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 
 	// Print header
@@ -147,9 +117,9 @@ func displayTable(clusters []clusterItem) error {
 		message := getConditionMessage(cluster.Status.Conditions, "Ready")
 
 		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			cluster.ID,
+			cluster.UID,
 			cluster.Name,
-			cluster.Spec.Version,
+			cluster.Status.Version,
 			available,
 			ready,
 			message,
@@ -161,16 +131,16 @@ func displayTable(clusters []clusterItem) error {
 	return w.Flush()
 }
 
-func getConditionStatus(conditions []condition, condType string) string {
+func getConditionStatus(conditions []metav1.Condition, condType string) string {
 	for _, cond := range conditions {
 		if cond.Type == condType {
-			return cond.Status
+			return string(cond.Status)
 		}
 	}
 	return "-"
 }
 
-func getConditionMessage(conditions []condition, condType string) string {
+func getConditionMessage(conditions []metav1.Condition, condType string) string {
 	// First try the specified condition type
 	for _, cond := range conditions {
 		if cond.Type == condType && cond.Message != "" {
