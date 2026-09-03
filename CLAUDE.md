@@ -9,7 +9,7 @@ CLI tool (`rosactl`) for managing AWS infrastructure (VPC, IAM, OIDC) for ROSA h
 | Path                                 | Purpose                                                                                                            |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `cmd/rosactl/`                       | Binary entry point                                                                                                 |
-| `internal/commands/`                 | Cobra CLI subcommands (bootstrap, cluster, clusteriam, clusteroidc, clustervpc, handler, login, nodepool, version) |
+| `internal/commands/`                 | Cobra CLI subcommands (bootstrap, cluster, clusteriam, clusteroidc, clustervpc, handler, login, nodepool, oidcconfig, version) |
 | `internal/services/`                 | Business logic shared by CLI commands and Lambda handler                                                           |
 | `internal/aws/cloudformation/`       | CloudFormation client and stack operations                                                                         |
 | `internal/cloudformation/templates/` | Embedded CloudFormation templates (go:embed)                                                                       |

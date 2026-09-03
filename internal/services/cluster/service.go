@@ -17,6 +17,7 @@ import (
 	hfrest "github.com/openshift-online/rosa-hyperfleet-api/clientset/rest"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/aws/cloudformation"
 	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
+	"github.com/openshift-online/rosa-regional-platform-cli/internal/services/oidcconfig"
 )
 
 // GenerateClusterConfigRequest contains parameters for generating cluster configuration
@@ -32,6 +33,7 @@ type GenerateClusterConfigRequest struct {
 	MultiAZ            bool
 	LabelEnvironment   string
 	LabelTeam          string
+	OIDCConfigID       string
 	AWSConfig          aws.Config
 }
 
@@ -94,32 +96,66 @@ func GenerateClusterConfig(ctx context.Context, req *GenerateClusterConfigReques
 		return nil, fmt.Errorf("IAM outputs missing required value WorkerInstanceProfileName")
 	}
 
-	spec := map[string]interface{}{
-		"hostedCluster": map[string]interface{}{
-			"release": map[string]interface{}{
-				"image": req.Version,
-			},
-			"platform": map[string]interface{}{
-				"type": "AWS",
-				"aws": map[string]interface{}{
-					"region": req.Region,
-					"rolesRef": map[string]interface{}{
-						"ingressARN":              iamOutputs["IngressRoleArn"],
-						"imageRegistryARN":        iamOutputs["ImageRegistryRoleArn"],
-						"storageARN":              iamOutputs["EBSCSIRoleArn"],
-						"networkARN":              iamOutputs["NetworkConfigRoleArn"],
-						"kubeCloudControllerARN":  iamOutputs["CloudControllerManagerRoleArn"],
-						"nodePoolManagementARN":   iamOutputs["NodePoolManagementRoleArn"],
-						"controlPlaneOperatorARN": iamOutputs["ControlPlaneOperatorRoleArn"],
-					},
-					"cloudProviderConfig": map[string]interface{}{
-						"vpc":    vpcID,
-						"zone":   req.Region + "a",
-						"subnet": map[string]interface{}{"id": firstSubnet},
-					},
+	// Look up OIDC issuer URL if OIDCConfigID is provided (OIDC-first workflow)
+	var oidcIssuerURL string
+	if req.OIDCConfigID != "" {
+		platformURL, err := pkgconfig.GetPlatformAPIURL()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get platform API URL: %w", err)
+		}
+
+		oidcReq := &oidcconfig.GetOidcConfigRequest{
+			ID:             req.OIDCConfigID,
+			PlatformAPIURL: platformURL,
+			AWSConfig:      req.AWSConfig,
+		}
+
+		oidcResp, err := oidcconfig.GetOidcConfig(ctx, oidcReq)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get OIDC config: %w", err)
+		}
+
+		if oidcResp.OidcConfig.Spec.IssuerUrl == "" {
+			return nil, fmt.Errorf("OIDC config %s has no issuer URL", req.OIDCConfigID)
+		}
+
+		oidcIssuerURL = oidcResp.OidcConfig.Spec.IssuerUrl
+		fmt.Printf("Using OIDC issuer URL from config %s: %s\n", req.OIDCConfigID, oidcIssuerURL)
+	}
+
+	hostedClusterSpec := map[string]interface{}{
+		"release": map[string]interface{}{
+			"image": req.Version,
+		},
+		"platform": map[string]interface{}{
+			"type": "AWS",
+			"aws": map[string]interface{}{
+				"region": req.Region,
+				"rolesRef": map[string]interface{}{
+					"ingressARN":              iamOutputs["IngressRoleArn"],
+					"imageRegistryARN":        iamOutputs["ImageRegistryRoleArn"],
+					"storageARN":              iamOutputs["EBSCSIRoleArn"],
+					"networkARN":              iamOutputs["NetworkConfigRoleArn"],
+					"kubeCloudControllerARN":  iamOutputs["CloudControllerManagerRoleArn"],
+					"nodePoolManagementARN":   iamOutputs["NodePoolManagementRoleArn"],
+					"controlPlaneOperatorARN": iamOutputs["ControlPlaneOperatorRoleArn"],
+				},
+				"cloudProviderConfig": map[string]interface{}{
+					"vpc":    vpcID,
+					"zone":   req.Region + "a",
+					"subnet": map[string]interface{}{"id": firstSubnet},
 				},
 			},
 		},
+	}
+
+	// Set issuerURL if OIDC config was provided (OIDC-first workflow)
+	if oidcIssuerURL != "" {
+		hostedClusterSpec["issuerURL"] = oidcIssuerURL
+	}
+
+	spec := map[string]interface{}{
+		"hostedCluster": hostedClusterSpec,
 	}
 
 	// Build labels
@@ -148,6 +184,11 @@ func GenerateClusterConfig(ctx context.Context, req *GenerateClusterConfigReques
 	var cluster v1alpha1.Cluster
 	if err := json.Unmarshal(clusterBytes, &cluster); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal cluster: %w", err)
+	}
+
+	// Debug: verify issuerURL is set correctly
+	if req.OIDCConfigID != "" {
+		fmt.Printf("DEBUG: Generated cluster config with spec.hostedCluster.issuerURL = %s\n", cluster.Spec.HostedCluster.IssuerURL)
 	}
 
 	return &GenerateClusterConfigResponse{

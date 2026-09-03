@@ -76,3 +76,17 @@ func TestClusterIAMList_RegionRequired(t *testing.T) {
 		t.Errorf("Execute() = %v, want ErrRegionRequired", err)
 	}
 }
+
+func TestClusterIAMCreate_InvalidOIDCIssuerURL(t *testing.T) {
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
+
+	cmd := newCreateCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"my-cluster", "--oidc-issuer-url", "http://insecure.example.com"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Execute() expected error for non-HTTPS OIDC issuer URL, got nil")
+	}
+}

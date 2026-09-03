@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
+	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/services/clusteroidc"
+	"github.com/openshift-online/rosa-regional-platform-cli/internal/services/oidcconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +17,7 @@ type createOptions struct {
 	clusterName    string
 	oidcIssuerURL  string
 	oidcThumbprint string
+	oidcConfigID   string
 	region         string
 	noWait         bool
 }
@@ -33,7 +37,12 @@ This command:
 
 The IAM roles stack must already exist (created via 'rosactl cluster-iam create').
 
-Example:
+OIDC-first workflow (recommended):
+  rosactl cluster-oidc create my-cluster \
+    --oidc-config-id 24ab3cd7 \
+    --region us-east-1
+
+Traditional workflow:
   rosactl cluster-oidc create my-cluster \
     --oidc-issuer-url https://d1234.cloudfront.net/my-cluster \
     --region us-east-1`,
@@ -48,35 +57,68 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&opts.oidcIssuerURL, "oidc-issuer-url", "", "OIDC issuer URL from the cluster (required)")
+	cmd.Flags().StringVar(&opts.oidcIssuerURL, "oidc-issuer-url", "", "OIDC issuer URL from the cluster")
 	cmd.Flags().StringVar(&opts.oidcThumbprint, "oidc-thumbprint", "", "TLS thumbprint (optional, fetched automatically if omitted)")
+	cmd.Flags().StringVar(&opts.oidcConfigID, "oidc-config-id", "", "OIDC config ID (alternative to --oidc-issuer-url)")
 	cmd.Flags().BoolVar(&opts.noWait, "no-wait", false, "Return immediately without waiting for stack creation to complete")
-
-	_ = cmd.MarkFlagRequired("oidc-issuer-url")
 
 	return cmd
 }
 
 func runCreate(ctx context.Context, opts *createOptions) error {
-	if !strings.HasPrefix(opts.oidcIssuerURL, "https://") {
-		return fmt.Errorf("OIDC issuer URL must start with https://")
+	// Validate flags
+	if opts.oidcConfigID == "" && opts.oidcIssuerURL == "" {
+		return fmt.Errorf("either --oidc-config-id or --oidc-issuer-url must be provided")
 	}
-
-	fmt.Println("Creating cluster OIDC provider...")
-	fmt.Printf("   Cluster: %s\n", opts.clusterName)
-	fmt.Printf("   OIDC Issuer: %s\n", opts.oidcIssuerURL)
-	fmt.Printf("   Region: %s\n", opts.region)
-	fmt.Println()
+	if opts.oidcConfigID != "" && opts.oidcIssuerURL != "" {
+		return fmt.Errorf("--oidc-config-id and --oidc-issuer-url are mutually exclusive")
+	}
 
 	cfg, err := internalaws.NewConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
+	// Resolve OIDC issuer URL and thumbprint
+	var oidcIssuerURL, oidcThumbprint string
+	if opts.oidcConfigID != "" {
+		// OIDC-first flow: look up config from platform API
+		fmt.Println("Creating cluster OIDC provider from OIDC config...")
+		fmt.Printf("   Cluster: %s\n", opts.clusterName)
+		fmt.Printf("   OIDC Config ID: %s\n", opts.oidcConfigID)
+		fmt.Printf("   Region: %s\n", opts.region)
+		fmt.Println()
+
+		oidcIssuerURL, oidcThumbprint, err = resolveOIDCConfigDetails(ctx, opts.oidcConfigID, cfg)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Resolved from OIDC config:\n")
+		fmt.Printf("   Issuer URL: %s\n", oidcIssuerURL)
+		if oidcThumbprint != "" {
+			fmt.Printf("   Thumbprint: %s\n", oidcThumbprint)
+		}
+		fmt.Println()
+	} else {
+		// Traditional flow: use provided issuer URL
+		if !strings.HasPrefix(opts.oidcIssuerURL, "https://") {
+			return fmt.Errorf("OIDC issuer URL must start with https://")
+		}
+		oidcIssuerURL = opts.oidcIssuerURL
+		oidcThumbprint = opts.oidcThumbprint
+
+		fmt.Println("Creating cluster OIDC provider...")
+		fmt.Printf("   Cluster: %s\n", opts.clusterName)
+		fmt.Printf("   OIDC Issuer: %s\n", oidcIssuerURL)
+		fmt.Printf("   Region: %s\n", opts.region)
+		fmt.Println()
+	}
+
 	req := &clusteroidc.CreateOIDCRequest{
 		ClusterName:    opts.clusterName,
-		OIDCIssuerURL:  opts.oidcIssuerURL,
-		OIDCThumbprint: opts.oidcThumbprint,
+		OIDCIssuerURL:  oidcIssuerURL,
+		OIDCThumbprint: oidcThumbprint,
 		NoWait:         opts.noWait,
 		AWSConfig:      cfg,
 	}
@@ -109,4 +151,28 @@ func runCreate(ctx context.Context, opts *createOptions) error {
 	}
 
 	return nil
+}
+
+func resolveOIDCConfigDetails(ctx context.Context, configID string, awsConfig aws.Config) (issuerURL, thumbprint string, err error) {
+	platformURL, err := pkgconfig.GetPlatformAPIURL()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get platform API URL: %w", err)
+	}
+
+	req := &oidcconfig.GetOidcConfigRequest{
+		ID:             configID,
+		PlatformAPIURL: platformURL,
+		AWSConfig:      awsConfig,
+	}
+
+	resp, err := oidcconfig.GetOidcConfig(ctx, req)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get OIDC config: %w", err)
+	}
+
+	if resp.OidcConfig.Spec.IssuerUrl == "" {
+		return "", "", fmt.Errorf("OIDC config %s has no issuer URL", configID)
+	}
+
+	return resp.OidcConfig.Spec.IssuerUrl, resp.OidcConfig.Status.Thumbprint, nil
 }

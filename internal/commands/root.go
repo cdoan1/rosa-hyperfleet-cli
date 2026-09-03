@@ -13,6 +13,7 @@ import (
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/handler"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/login"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/nodepool"
+	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/oidcconfig"
 	"github.com/openshift-online/rosa-regional-platform-cli/internal/commands/version"
 	pkgconfig "github.com/openshift-online/rosa-regional-platform-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -48,6 +49,7 @@ func init() {
 	rootCmd.AddCommand(clustervpc.NewClusterVPCCommand())
 	rootCmd.AddCommand(handler.NewHandlerCommand())
 	rootCmd.AddCommand(nodepool.NewNodePoolCommand())
+	rootCmd.AddCommand(oidcconfig.NewOidcConfigCommand())
 	rootCmd.AddCommand(login.NewLoginCommand())
 	rootCmd.AddCommand(version.NewVersionCommand())
 }

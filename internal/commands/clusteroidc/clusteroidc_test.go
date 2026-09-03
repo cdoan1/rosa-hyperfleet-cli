@@ -7,18 +7,31 @@ import (
 	internalaws "github.com/openshift-online/rosa-regional-platform-cli/internal/aws"
 )
 
-func TestClusterOIDCCreate_OIDCURLRequired(t *testing.T) {
+func TestClusterOIDCCreate_RequiresEitherFlag(t *testing.T) {
 	t.Setenv(internalaws.EnvRegion, "us-east-1")
 
 	cmd := newCreateCommand()
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
-	// --oidc-issuer-url is MarkFlagRequired; Cobra rejects before RunE fires
 	cmd.SetArgs([]string{"my-cluster"})
 
 	err := cmd.Execute()
 	if err == nil {
-		t.Fatal("Execute() expected error for missing --oidc-issuer-url, got nil")
+		t.Fatal("Execute() expected error when neither --oidc-issuer-url nor --oidc-config-id provided, got nil")
+	}
+}
+
+func TestClusterOIDCCreate_MutuallyExclusiveFlags(t *testing.T) {
+	t.Setenv(internalaws.EnvRegion, "us-east-1")
+
+	cmd := newCreateCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"my-cluster", "--oidc-issuer-url", "https://example.com", "--oidc-config-id", "abc123"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Execute() expected error when both --oidc-issuer-url and --oidc-config-id provided, got nil")
 	}
 }
 
